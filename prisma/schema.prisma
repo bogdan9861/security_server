@@ -1,5 +1,3 @@
-// prisma/schema.prisma
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,446 +7,157 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ==================== ENUMS ====================
-
-enum Gender {
-  MALE
-  FEMALE
-}
-
 enum UserRole {
+  CLIENT
+  OPERATOR
   ADMIN
-  DOCTOR
-  REGISTRATOR
-  NURSE
-  PATIENT
 }
 
-enum VisitStatus {
-  SCHEDULED // Запланирован
-  CHECKED_IN // Отметка о прибытии
-  IN_PROGRESS // В процессе приёма
-  COMPLETED // Завершён
-  CANCELLED // Отменён
-  NO_SHOW // Не явился
+enum TicketStatus {
+  NEW
+  IN_PROGRESS
+  NEED_INFO
+  CLOSED
+  REJECTED
 }
 
-enum PaymentType {
-  OMS // Обязательное медицинское страхование
-  VMI // Добровольное медицинское страхование
-  PAID // Платные услуги
+enum PriorityLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
 }
 
-enum AppointmentType {
-  INITIAL // Первичный приём
-  FOLLOW_UP // Повторный приём
-  CONSULTATION // Консультация
-  PROCEDURE // Процедура
-  VACCINATION // Вакцинация
+enum NotificationType {
+  STATUS_CHANGED
+  COMMENT_ADDED
+  ASSIGNED
+  TICKET_CREATED
+  READED
 }
 
-// ==================== ОСНОВНЫЕ МОДЕЛИ ====================
-
-// Пользователи системы (авторизация)
 model User {
-  id           Int       @id @default(autoincrement())
-  email        String    @unique
-  passwordHash String
-  role         UserRole  @default(DOCTOR)
-  isActive     Boolean   @default(true)
-  lastLoginAt  DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-
-  firstName String?
-  lastName  String?
-  phone     String?
-
-  // Поля для восстановления пароля
-  resetToken        String?
-  resetTokenExpires DateTime?
-
-  // Связи
-  doctorProfile      Doctor?
-  registratorProfile Registrator?
-  sessions           Session[]
-  auditLogs          AuditLog[]
-  patients           Patient[]
-
-  @@index([email])
-  @@index([resetToken])
-}
-
-// Сессии пользователей
-model Session {
-  id        String   @id @default(cuid())
-  userId    Int
-  token     String   @unique
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([token])
-  @@index([expiresAt])
-}
-
-// ==================== МЕДИЦИНСКИЕ СУЩНОСТИ ====================
-
-// Пациенты
-model Patient {
-  id             Int       @id @default(autoincrement())
-  externalId     String?   @unique // Внешний ID из другой системы
-  firstName      String
-  lastName       String
-  middleName     String?
-  birthDate      DateTime
-  gender         Gender
-  snils          String?   @unique // СНИЛС
-  policyNumber   String?   @unique // Номер полиса ОМС
-  policyCompany  String? // Страховая компания
-  phone          String
-  phoneSecondary String?
-  email          String?   @unique
-  address        String?
-  passportSeries String?
-  passportNumber String?
-  passportIssued String?
-  passportDate   DateTime?
-
-  // Медицинские данные
-  bloodType       String?
-  allergies       String? // Аллергии (JSON или текст)
-  chronicDiseases String? // Хронические заболевания
-
-  // Статус
-  isArchived  Boolean   @default(false)
-  deathDate   DateTime?
-  deathReason String?
-
-  // Системные поля
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  createdBy Int? // ID пользователя, создавшего запись
-
-  // Связи
-  visits            Visit[]
-  diagnoses         Diagnosis[]
-  prescriptions     Prescription[]
-  documents         Document[]
-  appointments      Appointment[]
-  medicalCards      MedicalCard[]
-  insurancePolicies InsurancePolicy[]
-  medicalRecords    MedicalRecord[]
-  user              User?              @relation(fields: [userId], references: [id])
-  userId            Int?
-
-  @@index([lastName, firstName])
-  @@index([snils])
-  @@index([policyNumber])
-  @@index([phone])
-  @@index([birthDate])
-  @@index([isArchived])
-}
-
-// Врачи (расширение User)
-model Doctor {
-  id              Int     @id @default(autoincrement())
-  userId          Int     @unique
-  specialization  String // Специализация (терапевт, хирург и т.д.)
-  qualification   String? // Квалификация/категория
-  experienceYears Int? // Опыт работы в годах
-  cabinetNumber   String? // Номер кабинета
-  workSchedule    Json? // JSON с расписанием
-  isOnVacation    Boolean @default(false)
-
-  // Системные поля
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Связи
-  user           User            @relation(fields: [userId], references: [id])
-  visits         Visit[]
-  appointments   Appointment[]
-  prescriptions  Prescription[]
-  medicalRecords MedicalRecord[]
-  diagnoses      Diagnosis[]
-
-  @@index([specialization])
-}
-
-// Регистраторы
-model Registrator {
-  id        Int     @id @default(autoincrement())
-  userId    Int     @unique
-  workShift String? // Смена (утро/вечер)
+  id       String   @id @default(uuid())
+  email    String   @unique
+  password String
+  name     String
+  role     UserRole @default(CLIENT)
+  isActive Boolean  @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user         User          @relation(fields: [userId], references: [id])
-  appointments Appointment[]
+  // Relations
+  tickets         Ticket[]        @relation("ClientTickets")
+  assigned        Ticket[]        @relation("AssignedTickets")
+  comments        Comment[]
+  notifications   Notification[]
+  auditLogs       AuditLog[]
+  ticketHistories TicketHistory[]
 }
 
-// ==================== ПРИЁМЫ И ВИЗИТЫ ====================
-
-// Приёмы (записи к врачу)
-model Appointment {
-  id              Int             @id @default(autoincrement())
-  patientId       Int
-  doctorId        Int
-  registratorId   Int?
-  appointmentTime DateTime
-  durationMinutes Int             @default(15)
-  type            AppointmentType @default(INITIAL)
-  status          VisitStatus     @default(SCHEDULED)
-  paymentType     PaymentType     @default(OMS)
-  price           Decimal?        @db.Decimal(10, 2)
-  notes           String? // Заметки регистратора
-  isPaid          Boolean         @default(false)
-
-  // Отмена/перенос
-  cancelledAt     DateTime?
-  cancelReason    String?
-  rescheduledFrom Int? // ID перенесённого приёма
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  createdBy Int? // ID пользователя, создавшего запись
-
-  // Связи
-  patient     Patient      @relation(fields: [patientId], references: [id])
-  doctor      Doctor       @relation(fields: [doctorId], references: [id])
-  registrator Registrator? @relation(fields: [registratorId], references: [id])
-  visit       Visit? // Связанный визит (после начала приёма)
-
-  @@unique([doctorId, appointmentTime]) // Врач не может быть занят в это время
-  @@index([patientId])
-  @@index([doctorId])
-  @@index([appointmentTime])
-  @@index([status])
-  @@index([paymentType])
-}
-
-// Визиты (фактические приёмы с медицинской информацией)
-model Visit {
-  id              Int      @id @default(autoincrement())
-  appointmentId   Int?     @unique // Связь с записью (опционально)
-  patientId       Int
-  doctorId        Int
-  visitDate       DateTime @default(now())
-  complaints      String? // Жалобы пациента
-  anamnesis       String? // Анамнез
-  objectiveData   String? // Объективные данные
-  diagnosis       String? // Диагноз (текст)
-  icd10Code       String? // Код МКБ-10
-  recommendations String? // Рекомендации
-  sickLeaveIssued Boolean  @default(false) // Выдан больничный лист
-  sickLeaveNumber String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Связи
-  appointment    Appointment?    @relation(fields: [appointmentId], references: [id])
-  patient        Patient         @relation(fields: [patientId], references: [id])
-  doctor         Doctor          @relation(fields: [doctorId], references: [id])
-  prescriptions  Prescription[]
-  medicalRecords MedicalRecord[]
-  diagnoses      Diagnosis[]
-
-  @@index([patientId])
-  @@index([doctorId])
-  @@index([visitDate])
-}
-
-// ==================== ДИАГНОЗЫ ====================
-
-// Диагнозы (отдельная сущность для истории болезней)
-model Diagnosis {
-  id          Int       @id @default(autoincrement())
-  patientId   Int
-  doctorId    Int
-  visitId     Int?
-  icd10Code   String // Код МКБ-10
-  name        String // Название диагноза
-  description String? // Детальное описание
-  diagnosedAt DateTime  @default(now())
-  isPrimary   Boolean   @default(false) // Основной диагноз
-  isActive    Boolean   @default(true) // Актуален ли сейчас
-  resolvedAt  DateTime? // Дата выздоровления
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Связи
-  patient Patient @relation(fields: [patientId], references: [id])
-  doctor  Doctor  @relation(fields: [doctorId], references: [id])
-  visit   Visit?  @relation(fields: [visitId], references: [id])
-
-  @@index([patientId])
-  @@index([icd10Code])
-  @@index([isActive])
-}
-
-// ==================== ЛЕЧЕНИЕ ====================
-
-// Рецепты/Назначения
-model Prescription {
-  id             Int      @id @default(autoincrement())
-  patientId      Int
-  doctorId       Int
-  visitId        Int
-  medicationName String // Название лекарства
-  dosage         String // Дозировка
-  administration String // Способ применения
-  startDate      DateTime @default(now())
-  endDate        DateTime
-  notes          String?
-  isCompleted    Boolean  @default(false)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Связи
-  patient Patient @relation(fields: [patientId], references: [id])
-  doctor  Doctor  @relation(fields: [doctorId], references: [id])
-  visit   Visit   @relation(fields: [visitId], references: [id])
-
-  @@index([patientId])
-  @@index([isCompleted])
-}
-
-// Медицинские записи (произвольные записи в карте)
-model MedicalRecord {
-  id          Int      @id @default(autoincrement())
-  patientId   Int
-  doctorId    Int?
-  visitId     Int?
-  recordType  String // "note", "lab_result", "instrumental"
+model Ticket {
+  id          String        @id @default(uuid())
   title       String
-  content     String? // Текстовое содержание
-  attachments Json? // Массив ссылок на файлы
-  recordDate  DateTime @default(now())
+  description String        @db.Text
+  status      TicketStatus  @default(NEW)
+  priority    PriorityLevel
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Связи
-  patient Patient @relation(fields: [patientId], references: [id])
-  doctor  Doctor? @relation(fields: [doctorId], references: [id])
-  visit   Visit?  @relation(fields: [visitId], references: [id])
+  // Relations
+  clientId String
+  client   User   @relation("ClientTickets", fields: [clientId], references: [id])
 
-  @@index([patientId])
-  @@index([recordDate])
+  assignedToId String?
+  assignedTo   User?   @relation("AssignedTickets", fields: [assignedToId], references: [id])
+
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  comments      Comment[]
+  attachments   Attachment[]
+  history       TicketHistory[]
+  notifications Notification[]
 }
 
-// Медицинские карты (основной документ)
-model MedicalCard {
-  id              Int       @id @default(autoincrement())
-  patientId       Int       @unique
-  cardNumber      String    @unique // Номер амбулаторной карты
-  openedAt        DateTime  @default(now())
-  closedAt        DateTime?
-  bloodGroup      String?
-  rhesusFactor    String?
-  allergies       Json? // Список аллергий
-  chronicDiseases Json? // Хронические заболевания
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  patient Patient @relation(fields: [patientId], references: [id])
-}
-
-// ==================== ФИНАНСЫ И ДОКУМЕНТЫ ====================
-
-// Страховые полисы (история)
-model InsurancePolicy {
-  id           Int         @id @default(autoincrement())
-  patientId    Int
-  policyNumber String
-  policyType   PaymentType
-  companyName  String
-  validFrom    DateTime
-  validTo      DateTime
-  isActive     Boolean     @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  patient Patient @relation(fields: [patientId], references: [id])
-
-  @@unique([patientId, policyNumber])
-  @@index([policyNumber])
-}
-
-// Документы (сканы, PDF, результаты анализов)
-model Document {
-  id           Int      @id @default(autoincrement())
-  patientId    Int
-  uploaderId   Int? // ID пользователя, загрузившего документ
-  documentType String // "Анализ", "Выписка", "Согласие"
-  fileName     String
-  filePath     String // Путь к файлу
-  fileSize     Int // Размер в байтах
-  mimeType     String
-  description  String?
-  uploadedAt   DateTime @default(now())
-
-  // Связи
-  patient Patient @relation(fields: [patientId], references: [id])
-
-  @@index([patientId])
-  @@index([documentType])
-}
-
-// ==================== АУДИТ И ЛОГИРОВАНИЕ ====================
-
-// Аудит действий пользователей
-model AuditLog {
-  id         Int      @id @default(autoincrement())
-  userId     Int?
-  action     String // CREATE, UPDATE, DELETE, VIEW
-  entityType String // Patient, Visit, Appointment
-  entityId   Int
-  oldValues  Json? // Старые значения (для UPDATE)
-  newValues  Json? // Новые значения
-  ipAddress  String?
-  userAgent  String?
-  createdAt  DateTime @default(now())
-
-  user User? @relation(fields: [userId], references: [id])
-
-  @@index([userId])
-  @@index([entityType, entityId])
-  @@index([createdAt])
-}
-
-// ==================== СПРАВОЧНИКИ ====================
-
-// МКБ-10 справочник (можно импортировать)
-model Icd10Code {
-  id          Int     @id @default(autoincrement())
-  code        String  @unique // A00-B99
+model Category {
+  id          String  @id @default(uuid())
   name        String
-  description String?
-  parentCode  String? // Для иерархии
+  description String? @db.Text
 
-  @@index([code])
-  @@index([name])
+  tickets Ticket[]
 }
 
-// Услуги/Процедуры
-model MedicalService {
-  id              Int     @id @default(autoincrement())
-  name            String
-  code            String  @unique // Внутренний код
-  category        String
-  price           Decimal @db.Decimal(10, 2)
-  durationMinutes Int     @default(15)
-  isActive        Boolean @default(true)
+model Comment {
+  id         String  @id @default(uuid())
+  content    String  @db.Text
+  isInternal Boolean @default(false)
 
-  @@index([code])
-  @@index([category])
+  createdAt DateTime @default(now())
+
+  // Relations
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id])
+
+  ticketId String
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+}
+
+model Attachment {
+  id       String @id @default(uuid())
+  fileName String
+  filePath String
+  fileType String
+
+  uploadedAt DateTime @default(now())
+
+  // Relations
+  ticketId String
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+}
+
+model TicketHistory {
+  id       String  @id @default(uuid())
+  action   String
+  oldValue String?
+  newValue String?
+
+  createdAt DateTime @default(now())
+
+  // Relations
+  ticketId String
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+}
+
+model Notification {
+  id      String           @id @default(uuid())
+  type    NotificationType
+  message String
+  isRead  Boolean          @default(false)
+
+  createdAt DateTime @default(now())
+
+  ticketId String?
+  ticket   Ticket? @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+}
+
+model AuditLog {
+  id        String  @id @default(uuid())
+  action    String
+  ipAddress String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  // Relations
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
 }
